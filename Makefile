@@ -13,3 +13,8 @@ lint:
 
 test:
 	uv run pytest
+
+contract:
+	npx tsp compile contract
+
+.PHONY: install start lint test contract
