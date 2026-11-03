@@ -133,3 +133,91 @@ def test_logout_ends_session_server_side(client):
         "/api/me", headers={"Cookie": f"session={saved}"}
     )
     assert response.status_code == 401
+
+
+def test_products_no_filters_paginates(client):
+    page1 = client.get("/api/products").json()
+    assert page1["meta"]["page"] == 1
+    assert page1["meta"]["perPage"] == 6
+    assert page1["meta"]["total"] >= 12
+    assert len(page1["items"]) == 6
+    assert page1["meta"]["totalPages"] == (page1["meta"]["total"] + 5) // 6
+    # id — строка, цена — целое число.
+    item = page1["items"][0]
+    assert isinstance(item["id"], str)
+    assert isinstance(item["price"]["amount"], int)
+
+
+def test_products_second_page_differs(client):
+    page1 = client.get("/api/products?page=1").json()
+    page2 = client.get("/api/products?page=2").json()
+    ids1 = {i["id"] for i in page1["items"]}
+    ids2 = {i["id"] for i in page2["items"]}
+    assert ids1.isdisjoint(ids2)
+
+
+def test_products_filter_by_category(client):
+    data = client.get("/api/products?category=videokarty&perPage=48").json()
+    assert data["meta"]["total"] == 4
+    # Все товары выдачи из одной категории.
+    assert len({i["categoryId"] for i in data["items"]}) == 1
+
+
+def test_products_search_is_case_insensitive(client):
+    data = client.get("/api/products?q=rtx&perPage=48").json()
+    assert data["meta"]["total"] == 3
+    assert all("RTX" in i["name"] for i in data["items"])
+
+
+def test_products_price_filter_inclusive(client):
+    data = client.get("/api/products?priceMax=15000&perPage=48").json()
+    amounts = [i["price"]["amount"] for i in data["items"]]
+    assert amounts and all(a <= 15000 for a in amounts)
+
+
+def test_products_available_filter(client):
+    all_products = client.get("/api/products?perPage=48").json()
+    available = client.get("/api/products?available=true&perPage=48").json()
+    # Недоступный товар виден без фильтра и скрыт с available=true.
+    assert available["meta"]["total"] == all_products["meta"]["total"] - 1
+    assert all(i["available"] for i in available["items"])
+    assert any(not i["available"] for i in all_products["items"])
+
+
+def test_products_combined_filters(client):
+    data = client.get(
+        "/api/products?category=videokarty&available=true&perPage=48"
+    ).json()
+    assert data["meta"]["total"] == 3
+
+
+def test_products_empty_result_is_200(client):
+    data = client.get("/api/products?q=zzz-nothing-matches").json()
+    assert data["meta"]["total"] == 0
+    assert data["items"] == []
+
+
+def test_products_price_min_over_max_is_empty(client):
+    data = client.get("/api/products?priceMin=100000&priceMax=1").json()
+    assert data["meta"]["total"] == 0
+
+
+def test_products_bad_params_are_400(client):
+    assert client.get("/api/products?page=abc").status_code == 400
+    assert client.get("/api/products?page=0").status_code == 400
+    assert client.get("/api/products?perPage=100").status_code == 400
+    assert client.get("/api/products?priceMin=cheap").status_code == 400
+
+
+def test_product_by_id(client):
+    first = client.get("/api/products").json()["items"][0]
+    found = client.get(f"/api/products/{first['id']}")
+    assert found.status_code == 200
+    assert found.json()["id"] == first["id"]
+
+
+def test_product_unknown_id_is_404(client):
+    assert client.get("/api/products/99999999").status_code == 404
+    not_a_number = client.get("/api/products/not-a-number")
+    assert not_a_number.status_code == 404
+    assert not_a_number.json()["type"] == "/problems/not-found"

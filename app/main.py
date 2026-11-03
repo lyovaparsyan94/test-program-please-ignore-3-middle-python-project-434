@@ -21,6 +21,7 @@ from app.problems import (
     on_validation_error,
     problem,
 )
+from app.products import get_product, list_products, parse_query
 
 PUBLIC_DIR = Path(__file__).resolve().parent.parent / "public"
 SESSION_MAX_AGE = 60 * 60 * 24 * 30
@@ -58,42 +59,34 @@ def get_categories(conn=Depends(get_db)):
     return list_categories(conn)
 
 
-# --- Временные заглушки каталога (уедут на шагах про каталог и главную) ---
-
 @api.get("/api/products")
-def list_products():
-    items = [
-        {
-            "id": "1",
-            "slug": "nvidia-geforce-rtx-4070",
-            "name": "NVIDIA GeForce RTX 4070",
-            "description": "Видеокарта для игр в 1440p",
-            "price": {"amount": 54990, "currency": "RUB"},
-            "categoryId": "1",
-            "imageUrl": "/images/nvidia-geforce-rtx-4070.svg",
-            "available": True,
-        },
-        {
-            "id": "2",
-            "slug": "amd-ryzen-7-7800x3d",
-            "name": "AMD Ryzen 7 7800X3D",
-            "description": "Игровой процессор с 3D V-Cache",
-            "price": {"amount": 42990, "currency": "RUB"},
-            "categoryId": "2",
-            "imageUrl": "/images/amd-ryzen-7-7800x3d.svg",
-            "available": True,
-        },
-    ]
-    return {
-        "items": items,
-        "meta": {
-            "page": 1,
-            "perPage": 6,
-            "total": len(items),
-            "totalPages": 1,
-        },
-    }
+def get_products(
+    category: str | None = None,
+    q: str | None = None,
+    priceMin: str | None = None,
+    priceMax: str | None = None,
+    available: str | None = None,
+    page: str | None = None,
+    perPage: str | None = None,
+    conn=Depends(get_db),
+):
+    filters, error = parse_query(
+        category, q, priceMin, priceMax, available, page, perPage
+    )
+    if error is not None:
+        return problem("validation-error", error)
+    return list_products(conn, filters)
 
+
+@api.get("/api/products/{product_id}")
+def get_product_by_id(product_id: str, conn=Depends(get_db)):
+    found = get_product(conn, product_id)
+    if found is None:
+        return problem("not-found")
+    return found
+
+
+# --- Временная заглушка (уедет на шаге про главную) ---
 
 @api.get("/api/promos")
 def list_promos():

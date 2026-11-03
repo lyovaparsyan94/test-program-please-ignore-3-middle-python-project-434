@@ -15,3 +15,19 @@ def money(amount: int, currency: str = "RUB") -> dict[str, Any]:
 
 def category(row: dict[str, Any]) -> dict[str, Any]:
     return {"id": str(row["id"]), "slug": row["slug"], "name": row["name"]}
+
+
+def product(row: dict[str, Any]) -> dict[str, Any]:
+    result = {
+        "id": str(row["id"]),
+        "slug": row["slug"],
+        "name": row["name"],
+        "description": row["description"],
+        "price": money(row["price_amount"], row["currency"]),
+        "categoryId": str(row["category_id"]),
+        "available": row["available"],
+    }
+    # Пустую строку не отдаём: фронтенд нарисует заглушку только без поля.
+    if row["image_url"]:
+        result["imageUrl"] = row["image_url"]
+    return result
