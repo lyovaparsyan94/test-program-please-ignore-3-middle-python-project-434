@@ -1,6 +1,7 @@
 # Бекенд для интернет-магазина (Python)
 
 [![hexlet-check](https://github.com/lyovaparsyan94/test-program-please-ignore-3-middle-python-project-434/actions/workflows/hexlet-check.yml/badge.svg)](https://github.com/lyovaparsyan94/test-program-please-ignore-3-middle-python-project-434/actions)
+[![main](https://github.com/lyovaparsyan94/test-program-please-ignore-3-middle-python-project-434/actions/workflows/main.yml/badge.svg)](https://github.com/lyovaparsyan94/test-program-please-ignore-3-middle-python-project-434/actions/workflows/main.yml)
 
 Реализуйте бекенд интернет-магазина комплектующих: регистрацию и авторизацию, каталог с
 фильтрами и пагинацией, промо-блоки главной, оформление заказа и личный кабинет с историей.
