@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import APIRouter, Body, Depends, FastAPI, Request, Response
@@ -15,7 +16,7 @@ from app.auth import (
     validate_credentials,
 )
 from app.categories import list_categories
-from app.db import get_db
+from app.db import close_pool, get_db
 from app.monitoring import init_monitoring
 from app.orders import (
     create_order,
@@ -214,10 +215,18 @@ def spa(path: str):
     return FileResponse(PUBLIC_DIR / "index.html")
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield
+    # Закрываем пул из основного потока при остановке: иначе его доберёт
+    # сборщик мусора из воркер-треда с "cannot join current thread".
+    close_pool()
+
+
 def create_app() -> FastAPI:
     # Инициализация сборщика ошибок — до регистрации маршрутов.
     init_monitoring()
-    app = FastAPI(title="Online Store API")
+    app = FastAPI(title="Online Store API", lifespan=lifespan)
     app.add_exception_handler(RequestValidationError, on_validation_error)
     app.add_exception_handler(Exception, on_unhandled_error)
     app.include_router(api)
