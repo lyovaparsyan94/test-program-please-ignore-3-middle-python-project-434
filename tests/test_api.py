@@ -389,3 +389,16 @@ def test_orders_isolation_between_users(client):
     _register(client)
     assert client.get("/api/orders").json() == []
     assert client.get(f"/api/orders/{order_id}").status_code == 404
+
+
+def test_unhandled_error_returns_problem_details():
+    import json
+
+    from app.problems import on_unhandled_error
+
+    # Без MONITORING_DSN capture — no-op, обработчик отдаёт 500 Problem Details.
+    response = on_unhandled_error(None, RuntimeError("boom"))
+    assert response.status_code == 500
+    body = json.loads(response.body)
+    assert body["type"] == "/problems/internal-error"
+    assert body["status"] == 500

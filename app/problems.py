@@ -4,6 +4,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.requests import Request
 
+from app.monitoring import capture_exception
+
 # Закрытый словарь типов ошибок (RFC 9457), тот же, что в контракте.
 # title и detail технические: текст пользователю подбирает фронтенд по type.
 _PROBLEMS: dict[str, tuple[int, str]] = {
@@ -45,5 +47,6 @@ def on_validation_error(
 
 def on_unhandled_error(request: Request, exc: Exception) -> JSONResponse:
     # Сюда долетают только непредвиденные ошибки: ожидаемые ответы
-    # (401/400/404) отдаются через problem() напрямую.
+    # (401/400/404) отдаются через problem() напрямую, мимо сборщика.
+    capture_exception(exc)
     return problem("internal-error")

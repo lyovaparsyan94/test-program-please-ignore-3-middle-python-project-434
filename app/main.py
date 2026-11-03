@@ -16,6 +16,7 @@ from app.auth import (
 )
 from app.categories import list_categories
 from app.db import get_db
+from app.monitoring import init_monitoring
 from app.orders import (
     create_order,
     get_order,
@@ -214,6 +215,8 @@ def spa(path: str):
 
 
 def create_app() -> FastAPI:
+    # Инициализация сборщика ошибок — до регистрации маршрутов.
+    init_monitoring()
     app = FastAPI(title="Online Store API")
     app.add_exception_handler(RequestValidationError, on_validation_error)
     app.add_exception_handler(Exception, on_unhandled_error)
