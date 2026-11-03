@@ -1,3 +1,4 @@
+import os
 import socket
 import threading
 import time
@@ -6,7 +7,16 @@ import httpx
 import pytest
 import uvicorn
 
-from app.main import create_app
+# Локальный дефолт для разработки. В CI DATABASE_URL задаёт workflow,
+# и setdefault его тогда не перезапишет.
+os.environ.setdefault(
+    "DATABASE_URL",
+    "postgres://postgres:password@localhost:5432/appdb",
+)
+
+from app.main import create_app  # noqa: E402
+from app.migrate import apply_migrations  # noqa: E402
+from app.seed import seed  # noqa: E402
 
 
 def _free_port() -> int:
@@ -23,6 +33,10 @@ class _Server(uvicorn.Server):
 
 @pytest.fixture(scope="session")
 def base_url():
+    # Приводим базу в известное состояние до старта сервера.
+    apply_migrations()
+    seed()
+
     port = _free_port()
     config = uvicorn.Config(
         create_app,

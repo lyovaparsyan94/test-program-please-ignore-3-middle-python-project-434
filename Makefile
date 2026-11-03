@@ -13,7 +13,13 @@ build:
 	mkdir -p public
 	cp -R $(FRONTEND_DIST)/. public/
 
-start:
+migrate:
+	uv run python -m app.migrate
+
+seed:
+	uv run python -m app.seed
+
+start: migrate seed
 	uv run uvicorn --factory app.main:create_app --host 0.0.0.0 --port $(PORT)
 
 lint:
@@ -25,4 +31,4 @@ test:
 contract:
 	npx tsp compile contract
 
-.PHONY: install build start lint test contract
+.PHONY: install build migrate seed start lint test contract

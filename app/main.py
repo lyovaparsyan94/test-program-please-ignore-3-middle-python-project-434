@@ -1,9 +1,11 @@
 from pathlib import Path
 
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, Depends, FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse
 
+from app.categories import list_categories
+from app.db import get_db
 from app.problems import (
     on_unhandled_error,
     on_validation_error,
@@ -22,15 +24,12 @@ def health():
     return {"status": "ok"}
 
 
-# --- Временные заглушки каталога (уедут на шагах про базу и каталог) ---
-
 @api.get("/api/categories")
-def list_categories():
-    return [
-        {"id": "1", "slug": "videokarty", "name": "Видеокарты"},
-        {"id": "2", "slug": "processory", "name": "Процессоры"},
-    ]
+def get_categories(conn=Depends(get_db)):
+    return list_categories(conn)
 
+
+# --- Временные заглушки каталога (уедут на шагах про каталог и главную) ---
 
 @api.get("/api/products")
 def list_products():

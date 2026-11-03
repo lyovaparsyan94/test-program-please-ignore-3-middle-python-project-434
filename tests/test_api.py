@@ -25,3 +25,14 @@ def test_spa_fallback_serves_index_on_direct_cart(client):
     response = client.get("/cart")
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
+
+
+def test_categories_from_db(client):
+    response = client.get("/api/categories")
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) >= 3
+    assert {"videokarty", "processory"} <= {c["slug"] for c in data}
+    for item in data:
+        assert set(item) >= {"id", "slug", "name"}
+        assert isinstance(item["id"], str)
