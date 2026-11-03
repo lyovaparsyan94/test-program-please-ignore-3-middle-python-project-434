@@ -19,7 +19,6 @@ def init_monitoring() -> None:
     global _enabled
     dsn = os.environ.get("MONITORING_DSN", "")
     if not dsn:
-        # Без переменной приложение работает как обычно, мониторинг выключен.
         return
     sentry_sdk.init(
         dsn=dsn,

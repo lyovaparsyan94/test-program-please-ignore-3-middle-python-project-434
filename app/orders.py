@@ -187,8 +187,7 @@ def get_order(
 ) -> dict | None:
     if not order_id.isdigit():
         return None
-    # Изоляция условием запроса: чужой заказ
-    # невозможно отдать по невнимательности.
+    # Изоляция условием запроса: чужой заказ не отдать по невнимательности.
     order_row = conn.execute(
         "SELECT * FROM orders WHERE id = %s AND user_id = %s",
         (int(order_id), user_id),

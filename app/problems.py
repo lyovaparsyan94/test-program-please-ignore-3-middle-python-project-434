@@ -6,8 +6,7 @@ from starlette.requests import Request
 
 from app.monitoring import capture_exception
 
-# Закрытый словарь типов ошибок (RFC 9457), тот же, что в контракте.
-# title и detail технические: текст пользователю подбирает фронтенд по type.
+# title/detail технические: текст пользователю фронтенд подбирает по type.
 _PROBLEMS: dict[str, tuple[int, str]] = {
     "invalid-credentials": (401, "Invalid email or password"),
     "email-taken": (409, "Email already taken"),

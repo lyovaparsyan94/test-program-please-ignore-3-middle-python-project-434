@@ -50,7 +50,6 @@ def close_pool() -> None:
 
 
 def get_db() -> Iterator[psycopg.Connection]:
-    # Соединение из пула на запрос; finally гарантирует возврат.
     pool = get_pool()
     conn = pool.getconn()
     try:

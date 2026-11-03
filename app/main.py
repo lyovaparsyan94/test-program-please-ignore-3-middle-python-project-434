@@ -57,7 +57,6 @@ def _current_user(request: Request, conn) -> dict | None:
     return user_by_session(conn, token)
 
 
-# Healthcheck проверки и хостинга: не зависит ни от базы, ни от статики.
 @api.get("/api/health")
 def health():
     return {"status": "ok"}
@@ -132,8 +131,7 @@ def list_orders_route(request: Request, conn=Depends(get_db)):
 @api.get("/api/orders/{order_id}")
 def get_order_route(order_id: str, request: Request, conn=Depends(get_db)):
     user = _current_user(request, conn)
-    # Существование чужого заказа не подтверждаем:
-    # аноним и чужой дают одинаковый 404.
+    # Анониму тоже 404, не 401: существование чужого заказа не подтверждаем.
     if user is None:
         return problem("not-found")
     order = get_order(conn, user["id"], order_id)
@@ -165,8 +163,8 @@ def login(body: dict = Body(...), conn=Depends(get_db)):
     email, password = credentials
     user = authenticate(conn, email, password)
     if user is None:
-        # Один и тот же ответ на неизвестный email и неверный пароль:
-        # иначе перебором собирается список зарегистрированных адресов.
+        # Одинаковый ответ на неизвестный email и неверный пароль: без этого
+        # перебором собирается список зарегистрированных адресов.
         return problem("invalid-credentials")
     token = create_session(conn, user["id"])
     response = JSONResponse(public_user(user))
@@ -184,9 +182,7 @@ def logout(request: Request, conn=Depends(get_db)):
     return response
 
 
-# Единственный способ, которым фронтенд узнаёт состояние входа.
-# Аноним получает 401, а не 200 с пустым телом: иначе фронтенд навсегда
-# остаётся в состоянии загрузки.
+# Аноним — 401, а не 200 с пустым телом: иначе фронтенд навсегда «загружается».
 @api.get("/api/me")
 def me(request: Request, conn=Depends(get_db)):
     user = _current_user(request, conn)
@@ -195,8 +191,8 @@ def me(request: Request, conn=Depends(get_db)):
     return public_user(user)
 
 
-# Любой путь под /api/ — JSON-404, а не index.html. HEAD обязателен: без него
-# HEAD /api/... провалился бы в SPA-fallback и отдал бы страницу.
+# Неизвестный путь под /api/ — JSON-404, не index.html. С HEAD, иначе запрос
+# провалится в SPA-fallback и получит страницу.
 @api.api_route(
     "/api/{path:path}",
     methods=["GET", "HEAD", "POST", "DELETE", "PUT", "PATCH"],
@@ -205,11 +201,11 @@ def api_not_found(path: str):
     return problem("not-found")
 
 
-# SPA-fallback — последним, после всех /api/. HEAD нужен для статики (curl -sI).
+# Последним, после всех /api/: иначе перехватит их. HEAD нужен для curl -sI.
 @fallback.api_route("/{path:path}", methods=["GET", "HEAD"])
 def spa(path: str):
     file = (PUBLIC_DIR / path).resolve()
-    # is_relative_to: `..` в пути из запроса иначе увёл бы за пределы public.
+    # Без is_relative_to путь с `..` увёл бы за пределы public к файлам сервера.
     if path and file.is_relative_to(PUBLIC_DIR) and file.is_file():
         return FileResponse(file)
     return FileResponse(PUBLIC_DIR / "index.html")
@@ -218,13 +214,12 @@ def spa(path: str):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     yield
-    # Закрываем пул из основного потока при остановке: иначе его доберёт
-    # сборщик мусора из воркер-треда с "cannot join current thread".
+    # Закрываем пул из основного потока, иначе GC добьёт его из воркер-треда
+    # с "cannot join current thread".
     close_pool()
 
 
 def create_app() -> FastAPI:
-    # Инициализация сборщика ошибок — до регистрации маршрутов.
     init_monitoring()
     app = FastAPI(title="Online Store API", lifespan=lifespan)
     app.add_exception_handler(RequestValidationError, on_validation_error)
