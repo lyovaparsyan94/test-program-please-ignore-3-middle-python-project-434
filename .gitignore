@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# Node
+node_modules/
+
+# Build output (frontend static)
+public/
+
+# Артефакты браузерных тестов: отчёт, трассировки, запись экрана
+tmp/
+
+# Env
+.env
+
+# IDE / OS
+.idea/
+.DS_Store
