@@ -1,9 +1,19 @@
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, FastAPI
+from fastapi import APIRouter, Body, Depends, FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
+from app.auth import (
+    SESSION_COOKIE,
+    authenticate,
+    create_session,
+    create_user,
+    delete_session,
+    public_user,
+    user_by_session,
+    validate_credentials,
+)
 from app.categories import list_categories
 from app.db import get_db
 from app.problems import (
@@ -13,9 +23,28 @@ from app.problems import (
 )
 
 PUBLIC_DIR = Path(__file__).resolve().parent.parent / "public"
+SESSION_MAX_AGE = 60 * 60 * 24 * 30
 
 api = APIRouter()
 fallback = APIRouter()
+
+
+def _set_session_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        SESSION_COOKIE,
+        token,
+        max_age=SESSION_MAX_AGE,
+        httponly=True,
+        samesite="lax",
+        path="/",
+    )
+
+
+def _current_user(request: Request, conn) -> dict | None:
+    token = request.cookies.get(SESSION_COOKIE)
+    if not token:
+        return None
+    return user_by_session(conn, token)
 
 
 # Healthcheck проверки и хостинга: не зависит ни от базы, ни от статики.
@@ -87,11 +116,57 @@ def list_promos():
     ]
 
 
-# Пока авторизации нет, аноним получает 401, а не 200 с пустым телом:
-# иначе фронтенд навсегда остаётся в состоянии загрузки.
+@api.post("/api/users")
+def register(body: dict = Body(...), conn=Depends(get_db)):
+    credentials = validate_credentials(body)
+    if credentials is None:
+        return problem("validation-error", "Invalid email or password")
+    email, password = credentials
+    user = create_user(conn, email, password)
+    if user is None:
+        return problem("email-taken")
+    token = create_session(conn, user["id"])
+    response = JSONResponse(public_user(user), status_code=201)
+    _set_session_cookie(response, token)
+    return response
+
+
+@api.post("/api/session")
+def login(body: dict = Body(...), conn=Depends(get_db)):
+    credentials = validate_credentials(body)
+    if credentials is None:
+        return problem("validation-error", "Invalid email or password")
+    email, password = credentials
+    user = authenticate(conn, email, password)
+    if user is None:
+        # Один и тот же ответ на неизвестный email и неверный пароль:
+        # иначе перебором собирается список зарегистрированных адресов.
+        return problem("invalid-credentials")
+    token = create_session(conn, user["id"])
+    response = JSONResponse(public_user(user))
+    _set_session_cookie(response, token)
+    return response
+
+
+@api.delete("/api/session")
+def logout(request: Request, conn=Depends(get_db)):
+    token = request.cookies.get(SESSION_COOKIE)
+    if token:
+        delete_session(conn, token)
+    response = Response(status_code=204)
+    response.delete_cookie(SESSION_COOKIE, path="/")
+    return response
+
+
+# Единственный способ, которым фронтенд узнаёт состояние входа.
+# Аноним получает 401, а не 200 с пустым телом: иначе фронтенд навсегда
+# остаётся в состоянии загрузки.
 @api.get("/api/me")
-def me():
-    return problem("unauthorized")
+def me(request: Request, conn=Depends(get_db)):
+    user = _current_user(request, conn)
+    if user is None:
+        return problem("unauthorized")
+    return public_user(user)
 
 
 # Любой путь под /api/ — JSON-404, а не index.html. HEAD обязателен: без него
