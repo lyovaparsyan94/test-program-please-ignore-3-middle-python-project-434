@@ -16,6 +16,12 @@ from app.auth import (
 )
 from app.categories import list_categories
 from app.db import get_db
+from app.orders import (
+    create_order,
+    get_order,
+    list_orders,
+    validate_order_body,
+)
 from app.problems import (
     on_unhandled_error,
     on_validation_error,
@@ -90,6 +96,48 @@ def get_product_by_id(product_id: str, conn=Depends(get_db)):
 @api.get("/api/promos")
 def get_promos(conn=Depends(get_db)):
     return list_promos(conn)
+
+
+@api.post("/api/orders")
+def create_order_route(
+    request: Request, body: dict = Body(...), conn=Depends(get_db)
+):
+    user = _current_user(request, conn)
+    if user is None:
+        return problem("unauthorized")
+    data, error = validate_order_body(body)
+    if error is not None:
+        slug, detail = error
+        return problem(slug, detail)
+    order, unavailable = create_order(conn, user["id"], data)
+    if unavailable:
+        return problem(
+            "unavailable-items",
+            "Some items are unavailable",
+            unavailableProductIds=unavailable,
+        )
+    return JSONResponse(order, status_code=201)
+
+
+@api.get("/api/orders")
+def list_orders_route(request: Request, conn=Depends(get_db)):
+    user = _current_user(request, conn)
+    if user is None:
+        return problem("unauthorized")
+    return list_orders(conn, user["id"])
+
+
+@api.get("/api/orders/{order_id}")
+def get_order_route(order_id: str, request: Request, conn=Depends(get_db)):
+    user = _current_user(request, conn)
+    # Существование чужого заказа не подтверждаем:
+    # аноним и чужой дают одинаковый 404.
+    if user is None:
+        return problem("not-found")
+    order = get_order(conn, user["id"], order_id)
+    if order is None:
+        return problem("not-found")
+    return order
 
 
 @api.post("/api/users")

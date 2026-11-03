@@ -238,3 +238,154 @@ def test_promos_have_nested_available_products(client):
         # Один товар не участвует в двух блоках.
         assert product["id"] not in seen_products
         seen_products.add(product["id"])
+
+
+def _available_product_id(client):
+    response = client.get("/api/products?available=true&perPage=48")
+    return response.json()["items"][0]["id"]
+
+
+def _unavailable_product_id(client):
+    items = client.get("/api/products?perPage=48").json()["items"]
+    for item in items:
+        if not item["available"]:
+            return item["id"]
+    raise AssertionError("seed must contain an unavailable product")
+
+
+def _pickup(product_id, quantity=1, **extra):
+    return {
+        "items": [{"productId": product_id, "quantity": quantity, **extra}],
+        "shipping": {
+            "method": "pickup",
+            "recipientName": "Иван",
+            "phone": "+70000000000",
+        },
+    }
+
+
+def test_order_anonymous_is_401(client):
+    response = client.post("/api/orders", json=_pickup("1"))
+    assert response.status_code == 401
+    assert response.json()["type"] == "/problems/unauthorized"
+
+
+def test_orders_list_anonymous_is_401(client):
+    assert client.get("/api/orders").status_code == 401
+
+
+def test_order_pickup_success_with_snapshot(client):
+    _register(client)
+    product_id = _available_product_id(client)
+    price = client.get(f"/api/products/{product_id}").json()["price"]["amount"]
+
+    response = client.post("/api/orders", json=_pickup(product_id, quantity=2))
+    assert response.status_code == 201
+    order = response.json()
+    assert order["status"] == "paid"
+    assert order["total"]["amount"] == price * 2
+    assert order["createdAt"].endswith("Z")
+    assert "address" not in order["shipping"]
+    assert len(order["items"]) == 1
+    item = order["items"][0]
+    assert item["productId"] == product_id
+    assert item["priceAtPurchase"]["amount"] == price
+    assert item["quantity"] == 2
+    assert "productName" in item
+
+
+def test_order_delivery_ignores_client_supplied_price(client):
+    _register(client)
+    product_id = _available_product_id(client)
+    price = client.get(f"/api/products/{product_id}").json()["price"]["amount"]
+    body = {
+        "items": [{"productId": product_id, "quantity": 1, "price": 1}],
+        "shipping": {
+            "method": "delivery",
+            "recipientName": "Иван",
+            "phone": "+70000000000",
+            "address": "Москва, ул. Пушкина, 1",
+        },
+        "total": 1,
+    }
+    response = client.post("/api/orders", json=body)
+    assert response.status_code == 201
+    order = response.json()
+    # Сервер считает сам: подсунутые price/total проигнорированы.
+    assert order["total"]["amount"] == price
+    assert order["shipping"]["address"] == "Москва, ул. Пушкина, 1"
+
+
+def test_order_delivery_without_address_is_400(client):
+    _register(client)
+    product_id = _available_product_id(client)
+    body = {
+        "items": [{"productId": product_id, "quantity": 1}],
+        "shipping": {
+            "method": "delivery",
+            "recipientName": "Иван",
+            "phone": "+70000000000",
+            "address": "   ",
+        },
+    }
+    response = client.post("/api/orders", json=body)
+    assert response.status_code == 400
+    assert response.json()["type"] == "/problems/address-required"
+
+
+def test_order_empty_items_is_validation_error(client):
+    _register(client)
+    body = {
+        "items": [],
+        "shipping": {
+            "method": "pickup",
+            "recipientName": "Иван",
+            "phone": "+70000000000",
+        },
+    }
+    response = client.post("/api/orders", json=body)
+    assert response.status_code == 400
+    assert response.json()["type"] == "/problems/validation-error"
+
+
+def test_order_unavailable_items_lists_all_and_creates_nothing(client):
+    _register(client)
+    unavailable = _unavailable_product_id(client)
+    body = {
+        "items": [
+            {"productId": unavailable, "quantity": 1},
+            {"productId": "99999999", "quantity": 1},
+        ],
+        "shipping": {
+            "method": "pickup",
+            "recipientName": "Иван",
+            "phone": "+70000000000",
+        },
+    }
+    response = client.post("/api/orders", json=body)
+    assert response.status_code == 400
+    data = response.json()
+    assert data["type"] == "/problems/unavailable-items"
+    assert set(data["unavailableProductIds"]) == {unavailable, "99999999"}
+    assert client.get("/api/orders").json() == []
+
+
+def test_orders_list_newest_first(client):
+    _register(client)
+    product_id = _available_product_id(client)
+    first = client.post("/api/orders", json=_pickup(product_id)).json()["id"]
+    second = client.post("/api/orders", json=_pickup(product_id)).json()["id"]
+    orders = client.get("/api/orders").json()
+    assert [order["id"] for order in orders[:2]] == [second, first]
+
+
+def test_orders_isolation_between_users(client):
+    _register(client)
+    product_id = _available_product_id(client)
+    order_id = client.post("/api/orders", json=_pickup(product_id)).json()["id"]
+    assert client.get(f"/api/orders/{order_id}").status_code == 200
+
+    # Второй пользователь: его кабинет пуст, чужой заказ для него 404.
+    _register(client)
+    assert client.get("/api/orders").json() == []
+    assert client.get(f"/api/orders/{order_id}").status_code == 404
