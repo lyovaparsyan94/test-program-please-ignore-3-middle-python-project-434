@@ -22,6 +22,7 @@ from app.problems import (
     problem,
 )
 from app.products import get_product, list_products, parse_query
+from app.promos import list_promos
 
 PUBLIC_DIR = Path(__file__).resolve().parent.parent / "public"
 SESSION_MAX_AGE = 60 * 60 * 24 * 30
@@ -86,27 +87,9 @@ def get_product_by_id(product_id: str, conn=Depends(get_db)):
     return found
 
 
-# --- Временная заглушка (уедет на шаге про главную) ---
-
 @api.get("/api/promos")
-def list_promos():
-    return [
-        {
-            "id": "1",
-            "title": "Новое поколение видеокарт",
-            "text": "RTX 4070 уже в продаже",
-            "product": {
-                "id": "1",
-                "slug": "nvidia-geforce-rtx-4070",
-                "name": "NVIDIA GeForce RTX 4070",
-                "description": "Видеокарта для игр в 1440p",
-                "price": {"amount": 54990, "currency": "RUB"},
-                "categoryId": "1",
-                "imageUrl": "/images/nvidia-geforce-rtx-4070.svg",
-                "available": True,
-            },
-        },
-    ]
+def get_promos(conn=Depends(get_db)):
+    return list_promos(conn)
 
 
 @api.post("/api/users")

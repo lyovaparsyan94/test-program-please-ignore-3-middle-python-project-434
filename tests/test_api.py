@@ -221,3 +221,20 @@ def test_product_unknown_id_is_404(client):
     not_a_number = client.get("/api/products/not-a-number")
     assert not_a_number.status_code == 404
     assert not_a_number.json()["type"] == "/problems/not-found"
+
+
+def test_promos_have_nested_available_products(client):
+    promos = client.get("/api/promos").json()
+    assert len(promos) >= 2
+    seen_products = set()
+    for promo in promos:
+        assert set(promo) >= {"id", "title", "text", "product"}
+        product = promo["product"]
+        assert set(product) >= {
+            "id", "slug", "name", "description",
+            "price", "categoryId", "available",
+        }
+        assert product["available"] is True
+        # Один товар не участвует в двух блоках.
+        assert product["id"] not in seen_products
+        seen_products.add(product["id"])
