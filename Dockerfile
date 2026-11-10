@@ -32,5 +32,9 @@ COPY --from=frontend \
     /build/node_modules/@hexlet/python-online-store-frontend/dist/. ./public/
 
 # EXPOSE не нужен: порт приходит из PORT, фиксированное число здесь врало бы.
-# Миграции и заливку данных запускает `make start` при старте контейнера.
-CMD ["make", "start"]
+# Миграции, заливка и старт сервера — при запуске контейнера.
+# --no-sync: окружение уже собрано выше, иначе uv run на старте дотянул бы
+#   dev-группу (pytest/ruff), что медлит холодный старт и требует реестра.
+# exec: uvicorn становится процессом 1 и получает SIGTERM от Render, поэтому
+#   отрабатывает закрытие пула в lifespan.
+CMD ["sh", "-c", "uv run --no-sync python -m app.migrate && uv run --no-sync python -m app.seed && exec uv run --no-sync uvicorn --factory app.main:create_app --host 0.0.0.0 --port ${PORT:-8080}"]
