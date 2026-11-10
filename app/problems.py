@@ -19,6 +19,15 @@ _PROBLEMS: dict[str, tuple[int, str]] = {
 }
 
 
+class ProblemException(Exception):
+    # Позволяет прервать запрос из зависимости (например require_user)
+    # тем же Problem Details, что отдаёт problem().
+    def __init__(self, slug: str, detail: str | None = None, **extra: Any):
+        self.slug = slug
+        self.detail = detail
+        self.extra = extra
+
+
 def problem(
     slug: str,
     detail: str | None = None,
@@ -42,6 +51,12 @@ def on_validation_error(
     request: Request, exc: RequestValidationError
 ) -> JSONResponse:
     return problem("validation-error", "Request body or parameters are invalid")
+
+
+def on_problem_exception(
+    request: Request, exc: ProblemException
+) -> JSONResponse:
+    return problem(exc.slug, exc.detail, **exc.extra)
 
 
 def on_unhandled_error(request: Request, exc: Exception) -> JSONResponse:

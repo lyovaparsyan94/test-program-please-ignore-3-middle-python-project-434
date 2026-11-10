@@ -25,6 +25,8 @@ from app.orders import (
     validate_order_body,
 )
 from app.problems import (
+    ProblemException,
+    on_problem_exception,
     on_unhandled_error,
     on_validation_error,
     problem,
@@ -55,6 +57,13 @@ def _current_user(request: Request, conn) -> dict | None:
     if not token:
         return None
     return user_by_session(conn, token)
+
+
+def require_user(request: Request, conn=Depends(get_db)) -> dict:
+    user = _current_user(request, conn)
+    if user is None:
+        raise ProblemException("unauthorized")
+    return user
 
 
 @api.get("/api/health")
@@ -101,11 +110,10 @@ def get_promos(conn=Depends(get_db)):
 
 @api.post("/api/orders")
 def create_order_route(
-    request: Request, body: dict = Body(...), conn=Depends(get_db)
+    body: dict = Body(...),
+    user: dict = Depends(require_user),
+    conn=Depends(get_db),
 ):
-    user = _current_user(request, conn)
-    if user is None:
-        return problem("unauthorized")
     data, error = validate_order_body(body)
     if error is not None:
         slug, detail = error
@@ -121,10 +129,7 @@ def create_order_route(
 
 
 @api.get("/api/orders")
-def list_orders_route(request: Request, conn=Depends(get_db)):
-    user = _current_user(request, conn)
-    if user is None:
-        return problem("unauthorized")
+def list_orders_route(user: dict = Depends(require_user), conn=Depends(get_db)):
     return list_orders(conn, user["id"])
 
 
@@ -184,10 +189,7 @@ def logout(request: Request, conn=Depends(get_db)):
 
 # Аноним — 401, а не 200 с пустым телом: иначе фронтенд навсегда «загружается».
 @api.get("/api/me")
-def me(request: Request, conn=Depends(get_db)):
-    user = _current_user(request, conn)
-    if user is None:
-        return problem("unauthorized")
+def me(user: dict = Depends(require_user)):
     return public_user(user)
 
 
@@ -222,6 +224,7 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     init_monitoring()
     app = FastAPI(title="Online Store API", lifespan=lifespan)
+    app.add_exception_handler(ProblemException, on_problem_exception)
     app.add_exception_handler(RequestValidationError, on_validation_error)
     app.add_exception_handler(Exception, on_unhandled_error)
     app.include_router(api)
