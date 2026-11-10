@@ -1,5 +1,7 @@
 import os
 import socket
+import subprocess
+import tempfile
 import threading
 import time
 from urllib.parse import urlsplit, urlunsplit
@@ -51,6 +53,23 @@ def _free_port() -> int:
         return sock.getsockname()[1]
 
 
+def _self_signed_cert(directory: str) -> tuple[str, str]:
+    # Сервер поднимаем по https, как проверка Хекслета: тогда cookie с флагом
+    # Secure доезжает обратно и в тестах, без возни с cookie-политикой.
+    cert = os.path.join(directory, "cert.pem")
+    key = os.path.join(directory, "key.pem")
+    subprocess.run(
+        [
+            "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
+            "-keyout", key, "-out", cert, "-days", "1",
+            "-subj", "/CN=localhost",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    return cert, key
+
+
 class _Server(uvicorn.Server):
     # Подавляем перехват сигналов: сервер живёт в треде теста.
     def install_signal_handlers(self) -> None:
@@ -65,6 +84,8 @@ def base_url():
     _reset_user_data()
     seed()
 
+    cert_dir = tempfile.mkdtemp()
+    cert, key = _self_signed_cert(cert_dir)
     port = _free_port()
     config = uvicorn.Config(
         create_app,
@@ -72,18 +93,21 @@ def base_url():
         host="127.0.0.1",
         port=port,
         log_level="warning",
+        ssl_certfile=cert,
+        ssl_keyfile=key,
     )
     server = _Server(config)
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
     while not server.started:
         time.sleep(0.01)
-    yield f"http://127.0.0.1:{port}"
+    yield f"https://127.0.0.1:{port}"
     server.should_exit = True
     thread.join()
 
 
 @pytest.fixture
 def client(base_url):
-    with httpx.Client(base_url=base_url) as http_client:
+    # verify=False: сертификат самоподписанный, проверять нечего.
+    with httpx.Client(base_url=base_url, verify=False) as http_client:
         yield http_client
