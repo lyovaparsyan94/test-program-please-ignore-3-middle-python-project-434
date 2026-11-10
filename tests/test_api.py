@@ -391,14 +391,84 @@ def test_orders_isolation_between_users(client):
     assert client.get(f"/api/orders/{order_id}").status_code == 404
 
 
-def test_unhandled_error_returns_problem_details():
-    import json
+def test_unhandled_error_returns_problem_details(client, monkeypatch):
+    # Ломаем обработчик так, чтобы он бросил непредвиденное исключение, и
+    # проверяем ответ через HTTP: Problem Details 500, а не дефолт фреймворка.
+    def boom(conn):
+        raise RuntimeError("boom")
 
-    from app.problems import on_unhandled_error
-
-    # Без MONITORING_DSN capture — no-op, обработчик отдаёт 500 Problem Details.
-    response = on_unhandled_error(None, RuntimeError("boom"))
+    monkeypatch.setattr("app.main.list_categories", boom)
+    response = client.get("/api/categories")
     assert response.status_code == 500
-    body = json.loads(response.body)
+    body = response.json()
     assert body["type"] == "/problems/internal-error"
     assert body["status"] == 500
+
+
+def test_login_invalid_body_is_validation_error(client):
+    bad_email = client.post(
+        "/api/session", json={"email": "nope", "password": "secret1"}
+    )
+    assert bad_email.status_code == 400
+    assert bad_email.json()["type"] == "/problems/validation-error"
+
+    short_pw = client.post(
+        "/api/session", json={"email": _unique_email(), "password": "12"}
+    )
+    assert short_pw.status_code == 400
+
+
+def test_order_body_not_object_is_validation_error(client):
+    _register(client)
+    response = client.post("/api/orders", json=[1, 2, 3])
+    assert response.status_code == 400
+    assert response.json()["type"] == "/problems/validation-error"
+
+
+def test_order_bad_shipping_fields_are_validation_error(client):
+    _register(client)
+    product_id = _available_product_id(client)
+    base = {"items": [{"productId": product_id, "quantity": 1}]}
+    cases = [
+        {"method": "teleport", "recipientName": "A", "phone": "1"},
+        {"method": "pickup", "phone": "1"},
+        {"method": "pickup", "recipientName": "A"},
+        {"method": "pickup", "recipientName": "  ", "phone": "1"},
+    ]
+    for shipping in cases:
+        response = client.post(
+            "/api/orders", json={**base, "shipping": shipping}
+        )
+        assert response.status_code == 400, shipping
+        assert response.json()["type"] == "/problems/validation-error"
+
+
+def test_order_bad_quantity_is_validation_error(client):
+    _register(client)
+    product_id = _available_product_id(client)
+    shipping = {"method": "pickup", "recipientName": "A", "phone": "1"}
+    for quantity in (0, -1, 1.5, "2", True):
+        response = client.post(
+            "/api/orders",
+            json={
+                "items": [{"productId": product_id, "quantity": quantity}],
+                "shipping": shipping,
+            },
+        )
+        assert response.status_code == 400, quantity
+        assert response.json()["type"] == "/problems/validation-error"
+
+
+def test_own_nonexistent_order_is_404(client):
+    _register(client)
+    response = client.get("/api/orders/99999999")
+    assert response.status_code == 404
+    assert response.json()["type"] == "/problems/not-found"
+
+
+def test_product_without_image_omits_image_url(client):
+    data = client.get("/api/products?perPage=48").json()["items"]
+    without_image = [item for item in data if "imageUrl" not in item]
+    assert without_image, "в каталоге должен быть товар без изображения"
+    # Пустую строку тоже не отдаём: поля просто нет.
+    assert all("imageUrl" not in item for item in without_image)
