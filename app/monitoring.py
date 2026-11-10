@@ -25,6 +25,9 @@ def init_monitoring() -> None:
         # Собираем ошибки, а не производительность: трейсинг проекту не нужен.
         traces_sample_rate=0.0,
         send_default_pii=False,
+        # Иначе Sentry кладёт локальные переменные кадров, и conninfo с паролем
+        # из get_pool уехал бы в событие при ошибке подключения к базе.
+        include_local_variables=False,
         before_send=_scrub,
     )
     _enabled = True
