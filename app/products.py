@@ -86,7 +86,14 @@ def _build_conditions(filters: dict) -> tuple[str, dict]:
         params["category"] = filters["category"]
     if filters["q"]:
         conditions.append("p.name ILIKE %(q)s")
-        params["q"] = f"%{filters['q']}%"
+        # Экранируем шаблонные символы, иначе q=%% вернёт весь каталог.
+        escaped = (
+            filters["q"]
+            .replace("\\", "\\\\")
+            .replace("%", "\\%")
+            .replace("_", "\\_")
+        )
+        params["q"] = f"%{escaped}%"
     if filters["priceMin"] is not None:
         conditions.append("p.price_amount >= %(priceMin)s")
         params["priceMin"] = filters["priceMin"]

@@ -45,6 +45,11 @@ def hash_password(password: str) -> str:
     return f"scrypt${_N}${_R}${_P}${salt.hex()}${digest.hex()}"
 
 
+# Для неизвестного email считаем хеш против заглушки: время ответа тогда
+# не выдаёт, зарегистрирован адрес или нет.
+_DUMMY_HASH = hash_password("timing-equalizer")
+
+
 def verify_password(password: str, stored: str) -> bool:
     try:
         algo, n, r, p, salt_hex, hash_hex = stored.split("$")
@@ -97,6 +102,7 @@ def authenticate(
         (email,),
     ).fetchone()
     if row is None:
+        verify_password(password, _DUMMY_HASH)
         return None
     if not verify_password(password, row["password_hash"]):
         return None
@@ -117,12 +123,14 @@ def delete_session(conn: psycopg.Connection, token: str) -> None:
 
 
 def user_by_session(conn: psycopg.Connection, token: str) -> dict | None:
+    # Протухшую сессию не принимаем, даже если cookie ещё жива.
     return conn.execute(
         """
         SELECT users.id, users.email
         FROM sessions
         JOIN users ON users.id = sessions.user_id
         WHERE sessions.id = %s
+          AND sessions.created_at > now() - interval '30 days'
         """,
         (token,),
     ).fetchone()
