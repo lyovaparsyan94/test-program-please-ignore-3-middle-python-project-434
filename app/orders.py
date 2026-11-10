@@ -2,7 +2,7 @@ from collections import defaultdict
 
 import psycopg
 
-from app.serializers import iso_z, money
+from app.serializers import order as serialize_order
 
 # Ошибка валидации: (тип Problem Details, технический текст) либо None.
 Error = tuple[str, str]
@@ -81,38 +81,6 @@ def validate_order_body(body: object) -> tuple[dict | None, Error | None]:
     if error is not None:
         return None, error
     return {"items": _merge_items(parsed_items), "shipping": shipping}, None
-
-
-def _serialize_shipping(order_row: dict) -> dict:
-    shipping = {
-        "method": order_row["method"],
-        "recipientName": order_row["recipient_name"],
-        "phone": order_row["phone"],
-    }
-    if order_row["address"]:
-        shipping["address"] = order_row["address"]
-    return shipping
-
-
-def _serialize_order(order_row: dict, item_rows: list[dict]) -> dict:
-    return {
-        "id": str(order_row["id"]),
-        "status": order_row["status"],
-        "items": [
-            {
-                "productId": str(item["product_id"]),
-                "productName": item["product_name"],
-                "priceAtPurchase": money(
-                    item["price_amount"], item["currency"]
-                ),
-                "quantity": item["quantity"],
-            }
-            for item in item_rows
-        ],
-        "shipping": _serialize_shipping(order_row),
-        "total": money(order_row["total_amount"], order_row["currency"]),
-        "createdAt": iso_z(order_row["created_at"]),
-    }
 
 
 def create_order(
@@ -201,7 +169,7 @@ def get_order(
         """,
         (int(order_id),),
     ).fetchall()
-    return _serialize_order(order_row, item_rows)
+    return serialize_order(order_row, item_rows)
 
 
 def list_orders(conn: psycopg.Connection, user_id: int) -> list[dict]:
@@ -230,6 +198,6 @@ def list_orders(conn: psycopg.Connection, user_id: int) -> list[dict]:
         items_by_order[item["order_id"]].append(item)
 
     return [
-        _serialize_order(order, items_by_order[order["id"]])
+        serialize_order(order, items_by_order[order["id"]])
         for order in orders
     ]
